@@ -90,6 +90,8 @@ async def seed_db(
         )
         db.add(user)
         await db.flush()
+    else:
+        user.hashed_password = pwd_context.hash("admin123")
 
     created_moods = 0
     existing_m = await db.execute(select(MoodLog).where(MoodLog.user_id == user.id))
