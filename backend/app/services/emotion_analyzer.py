@@ -1,0 +1,157 @@
+import re
+from functools import lru_cache
+from typing import Optional
+
+try:
+    import pymorphy2
+    _morph = pymorphy2.MorphAnalyzer(lang="uk")
+    PYMORPHY_AVAILABLE = True
+    print("[emotion_analyzer] pymorphy2 (uk) initialized OK")
+except Exception as e:
+    _morph = None
+    PYMORPHY_AVAILABLE = False
+    print(f"[emotion_analyzer] pymorphy2 not available: {e}")
+
+MOOD_TIPS = {
+    "Happy": [
+        "Продовжуйте плекати те, що приносить вам радість.",
+        "Поділіться своєю позитивною енергією з кимось поруч.",
+        "Використайте цей момент, щоб зробити щось, що відкладали.",
+    ],
+    "Sad": [
+        "Дозвольте собі відчути смуток — це нормально і природно.",
+        "Зверніться до друга або запишіть свої думки.",
+        "Спробуйте коротку прогулянку, щоб змінити настрій.",
+    ],
+    "Angry": [
+        "Зробіть кілька глибоких вдихів перед тим, як реагувати.",
+        "Фізична активність допоможе зняти напругу.",
+        "Визначте, яка ваша потреба зараз не задоволена.",
+    ],
+    "Fear": [
+        "Назвіть те, чого боїтесь — усвідомлення зменшує страх.",
+        "Зосередьтеся на тому, що зараз у вашій владі.",
+        "Спробуйте дихальну вправу 4-7-8 для заспокоєння.",
+    ],
+    "Surprise": [
+        "Дайте собі хвилину, щоб обробити те, що сталося.",
+        "Цікавість — це корисно. Дослідіть, що вас здивувало.",
+    ],
+}
+
+# Keywords stored as lemmas (normal forms).
+# pymorphy2 will reduce any inflected form to these before matching.
+KEYWORDS: dict[str, set[str]] = {
+    "Happy": {
+        # lemmas
+        "щасливий", "радість", "радісний", "чудовий", "веселий", "задоволений",
+        "кохати", "любити", "любов", "посмішка", "сміятися", "сміх",
+        "прекрасний", "добре", "класний", "крутий", "відмінний",
+        "захоплення", "натхнення", "вдячний", "радіти", "тішитися",
+        # common inflected forms (fallback when pymorphy2 unavailable)
+        "щаслива", "щасливо", "радий", "рада", "раді",
+        "радію", "радіє", "радіємо",
+        "люблю", "любить", "кохаю", "посміхаюся", "тішуся",
+        # English
+        "happy", "joy", "great", "wonderful", "excited", "love", "amazing",
+        "smile", "laugh", "fantastic", "excellent", "grateful",
+    },
+    "Sad": {
+        # lemmas
+        "сумний", "смуток", "сумувати", "скучати", "нудьгувати",
+        "плакати", "сльоза", "горе", "горювати", "самотній",
+        "боляче", "біль", "депресія", "пригнічений", "нещасний",
+        "журба", "розчарований", "втомитися", "важко", "засмучений",
+        # common inflected forms
+        "сумно", "сумна", "сумую", "сумує", "сумуємо",
+        "скучаю", "скучає", "нудьгую", "нудьгує",
+        "плачу", "плаче", "плачемо", "сльози",
+        "самотньо", "розчарована", "втомився", "втомилася",
+        # English
+        "sad", "unhappy", "depressed", "cry", "tear", "grief", "lonely",
+        "hurt", "pain", "disappointed", "tired",
+    },
+    "Angry": {
+        # lemmas
+        "злий", "злість", "злитися", "гнів", "гніватися", "роздратований",
+        "ненавидіти", "ненависть", "дратувати", "лютий", "лютувати",
+        "обурений", "несправедливо", "злобний",
+        # common inflected forms
+        "зла", "злюся", "злиться", "гніваюся", "гнівається",
+        "ненавиджу", "ненавидить", "дратує", "дратуєш",
+        "лютую", "лютує", "обурена", "роздратована",
+        # English
+        "angry", "mad", "furious", "rage", "hate", "annoyed", "frustrated", "upset",
+    },
+    "Fear": {
+        # lemmas
+        "страх", "страшний", "боятися", "тривога", "тривожний",
+        "нервувати", "нервовий", "переживати", "панікувати", "паніка",
+        "хвилюватися", "хвилювання", "небезпека", "стрес", "лякатися",
+        # common inflected forms
+        "страшно", "страшить", "боюся", "боюсь", "боїться", "боїмось",
+        "тривожно", "тривожна", "нервую", "нервує",
+        "переживаю", "переживає", "панікую", "панікує",
+        "хвилююся", "хвилюється", "лякаюся", "лякається",
+        # English
+        "fear", "scared", "anxious", "anxiety", "worry", "nervous", "afraid", "panic", "stress",
+    },
+    "Surprise": {
+        # lemmas
+        "здивований", "здивування", "несподіваний", "неймовірний", "шокований",
+        # common inflected forms
+        "здивована", "здивовано", "несподівано", "неймовірно", "шокована",
+        "вау", "wow",
+        # English
+        "surprised", "shocked", "unexpected", "astonished", "amazed",
+    },
+}
+
+
+@lru_cache(maxsize=4096)
+def _lemmatize(word: str) -> str:
+    if PYMORPHY_AVAILABLE and _morph:
+        parses = _morph.parse(word)
+        if parses:
+            return parses[0].normal_form
+    return word
+
+
+def _is_latin(text: str) -> bool:
+    latin = sum(1 for c in text if c.isalpha() and ord(c) < 256)
+    total = sum(1 for c in text if c.isalpha()) or 1
+    return latin / total > 0.8
+
+
+def analyze_text_emotions(text: str) -> dict[str, float]:
+    if not text or not text.strip():
+        return {}
+    return _keyword_analysis(text)
+
+
+def _keyword_analysis(text: str) -> dict[str, float]:
+    text_lower = text.lower()
+    raw_words = re.findall(r"[а-яёіїєґa-z']+", text_lower)
+
+    # Lemmatize each word
+    lemmas = [_lemmatize(w) for w in raw_words]
+
+    scores: dict[str, float] = {}
+    for emotion, kws in KEYWORDS.items():
+        count = sum(1 for lem in lemmas if lem in kws)
+        scores[emotion] = round(min(0.3 + count * 0.35, 1.0), 3) if count > 0 else 0.0
+
+    return scores
+
+
+def dominant_emotion(emotions: dict[str, float]) -> Optional[str]:
+    if not emotions:
+        return None
+    return max(emotions, key=emotions.get)
+
+
+def get_tips(emotions: dict[str, float]) -> list[str]:
+    emotion = dominant_emotion(emotions)
+    if emotion and emotion in MOOD_TIPS:
+        return MOOD_TIPS[emotion][:2]
+    return ["Знайдіть хвилину, щоб прислухатися до себе.", "Пам'ятайте: кожне відчуття є тимчасовим."]
