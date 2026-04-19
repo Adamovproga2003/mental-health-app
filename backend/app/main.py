@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
 from app.models import User, MoodLog, JournalEntry  # ensure models are registered
-from app.routers import auth, moods, journal
+from app.routers import auth, moods, journal, seed
 
 
 @asynccontextmanager
@@ -36,6 +36,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(moods.router)
 app.include_router(journal.router)
+app.include_router(seed.router)
 
 
 @app.get("/health")
