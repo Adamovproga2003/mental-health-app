@@ -50,7 +50,7 @@ export default function Navbar() {
         </button>
 
         <a
-          href="http://localhost:8000/docs"
+          href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/docs`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-slate-400 dark:text-slate-500 hover:text-calm-500 transition"
