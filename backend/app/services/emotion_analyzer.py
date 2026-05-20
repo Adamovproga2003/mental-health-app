@@ -99,13 +99,48 @@ KEYWORDS: dict[str, set[str]] = {
     "Surprise": {
         # lemmas
         "здивований", "здивування", "несподіваний", "неймовірний", "шокований",
+        "шок", "неочікуваний", "неочікувано",
         # common inflected forms
         "здивована", "здивовано", "несподівано", "неймовірно", "шокована",
         "вау", "wow",
+        "шоку", "шоком", "неочікувана", "неочікуваним",
         # English
-        "surprised", "shocked", "unexpected", "astonished", "amazed",
+        "surprised", "shocked", "unexpected", "astonished", "amazed", "shock",
     },
 }
+
+
+# Suffix rules for Ukrainian verb forms → infinitive (longest first to avoid partial matches).
+# Used as fallback when pymorphy2 is unavailable so inflected forms still match keyword lemmas.
+_UK_SUFFIXES: list[tuple[str, str]] = [
+    # reflexive past tense
+    ("увалася", "уватися"), ("увалась", "уватися"),
+    ("увався",  "уватися"), ("увалися", "уватися"), ("увались", "уватися"),
+    ("ювалася", "юватися"), ("ювалась", "юватися"),
+    ("ювався",  "юватися"), ("ювалися", "юватися"),
+    ("ялася",   "ятися"),   ("ялась",   "ятися"),
+    ("явся",    "ятися"),   ("ялися",   "ятися"),   ("ялись",   "ятися"),
+    ("илася",   "итися"),   ("илась",   "итися"),
+    ("ився",    "итися"),   ("илися",   "итися"),   ("ились",   "итися"),
+    ("алася",   "атися"),   ("алась",   "атися"),
+    ("ався",    "атися"),   ("алися",   "атися"),   ("ались",   "атися"),
+    # past tense -увати / -ювати
+    ("увала", "увати"), ("ували", "увати"), ("увало", "увати"),
+    ("ювала", "ювати"), ("ювали", "ювати"), ("ювало", "ювати"),
+    # past tense -яти
+    ("яла", "яти"), ("яв", "яти"), ("яли", "яти"), ("яло", "яти"),
+    # past tense -ити
+    ("ила", "ити"), ("ив", "ити"), ("или", "ити"), ("ило", "ити"),
+    # past tense -ати  (keep last — short suffix, broadest match)
+    ("ала", "ати"), ("ав", "ати"), ("али", "ати"), ("ало", "ати"),
+]
+
+
+def _fallback_lemmatize(word: str) -> str:
+    for suffix, replacement in _UK_SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 2:
+            return word[:-len(suffix)] + replacement
+    return word
 
 
 @lru_cache(maxsize=4096)
@@ -114,7 +149,7 @@ def _lemmatize(word: str) -> str:
         parses = _morph.parse(word)
         if parses:
             return parses[0].normal_form
-    return word
+    return _fallback_lemmatize(word)
 
 
 def _is_latin(text: str) -> bool:
