@@ -133,13 +133,14 @@ def _keyword_analysis(text: str) -> dict[str, float]:
     text_lower = text.lower()
     raw_words = re.findall(r"[а-яёіїєґa-z']+", text_lower)
 
-    # Lemmatize each word
     lemmas = [_lemmatize(w) for w in raw_words]
+    total = max(len(lemmas), 1)
 
     scores: dict[str, float] = {}
     for emotion, kws in KEYWORDS.items():
         count = sum(1 for lem in lemmas if lem in kws)
-        scores[emotion] = round(min(0.3 + count * 0.35, 1.0), 3) if count > 0 else 0.0
+        # normalize by text length: 1 hit in 10 tokens = 1.0
+        scores[emotion] = round(min(count / total * 10, 1.0), 3) if count > 0 else 0.0
 
     return scores
 
